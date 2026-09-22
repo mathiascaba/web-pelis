@@ -49,7 +49,7 @@ function init() {
   setupEffects();
   const genresReady = loadGenres();
   loadHero(genresReady);
-  loadMovies();
+  loadMovies(genresReady);
 }
 
 async function request(endpoint, params = {}) {
@@ -146,12 +146,13 @@ function buildUrl() {
   };
 }
 
-async function loadMovies() {
+async function loadMovies(genresReady) {
   elements.empty.classList.add("hidden");
   elements.pagination.classList.add("hidden");
   elements.grid.innerHTML = renderSkeletons(12);
 
   try {
+    await genresReady;
     const { endpoint, params } = buildUrl();
     const data = await request(endpoint, params);
     state.totalPages = data.total_pages || 1;
@@ -328,6 +329,9 @@ async function loadHero(genresReady) {
 }
 
 function setupEffects() {
+  const revealAll = () => {
+    document.querySelectorAll("[data-reveal]").forEach((el) => el.classList.add("revealed"));
+  };
   const observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
@@ -337,9 +341,10 @@ function setupEffects() {
         }
       });
     },
-    { threshold: 0.08 }
+    { threshold: 0.06 }
   );
   window._revealObserver = observer;
+  window.setTimeout(revealAll, 3000);
 
   document.addEventListener("mousemove", (e) => {
     elements.cursorGlow.style.transform = `translate3d(${e.clientX - 150}px, ${e.clientY - 150}px, 0)`;
@@ -356,6 +361,7 @@ function setupEffects() {
 
 function observeReveals(container) {
   container.querySelectorAll("[data-reveal]").forEach((el) => {
+    el.classList.remove("revealed");
     window._revealObserver.unobserve(el);
     window._revealObserver.observe(el);
   });
