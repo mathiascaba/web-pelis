@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pelis - Catálogo de Películas</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1 class="logo">🎬 Pelis</h1>
+      <form id="search-form" class="search-form">
+        <input id="search-input" type="text" placeholder="Buscar películas..." autocomplete="off" />
+        <button type="submit">Buscar</button>
+      </form>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-category="popular">Populares</button>
+      <button class="tab" data-category="top_rated">Mejor valoradas</button>
+      <button class="tab" data-category="now_playing">En cartelera</button>
+      <button class="tab" data-category="upcoming">Próximamente</button>
+    </nav>
+    <div id="genre-filters" class="genre-filters"></div>
+  </header>
+
+  <main class="main">
+    <h2 id="section-title" class="section-title">Populares</h2>
+    <div id="movies-grid" class="movies-grid"></div>
+    <p id="loading" class="loading">Cargando...</p>
+    <p id="empty" class="empty hidden">No se encontraron películas.</p>
+    <div id="pagination" class="pagination hidden">
+      <button id="prev-page" class="page-btn">← Anterior</button>
+      <span id="page-info" class="page-info"></span>
+      <button id="next-page" class="page-btn">Siguiente →</button>
+    </div>
+  </main>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-overlay" id="modal-overlay"></div>
+    <div class="modal-content" id="modal-content"></div>
+  </div>
+
+  <footer class="footer">
+    <p>Datos proporcionados por <a href="https://www.themoviedb.org" target="_blank" rel="noopener">TMDb</a>. Esta web usa la API de TMDb pero no está avalada ni certificada por TMDb.</p>
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
