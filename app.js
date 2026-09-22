@@ -6,11 +6,12 @@ const state = {
   page: 1,
   query: "",
   totalPages: 1,
+  genreMap: {},
+  heroId: null,
 };
 
 const elements = {
   grid: document.getElementById("movies-grid"),
-  loading: document.getElementById("loading"),
   empty: document.getElementById("empty"),
   title: document.getElementById("section-title"),
   searchForm: document.getElementById("search-form"),
@@ -23,6 +24,14 @@ const elements = {
   modal: document.getElementById("modal"),
   modalContent: document.getElementById("modal-content"),
   modalOverlay: document.getElementById("modal-overlay"),
+  hero: document.getElementById("hero"),
+  heroBackdrop: document.getElementById("hero-backdrop"),
+  heroTitle: document.getElementById("hero-title"),
+  heroMeta: document.getElementById("hero-meta"),
+  heroOverview: document.getElementById("hero-overview"),
+  heroMoreBtn: document.getElementById("hero-more-btn"),
+  cursorGlow: document.getElementById("cursor-glow"),
+  backToTop: document.getElementById("back-to-top"),
 };
 
 const CATEGORY_TITLES = {
@@ -37,7 +46,9 @@ function init() {
   setupTabs();
   setupPagination();
   setupModal();
-  loadGenres();
+  setupEffects();
+  const genresReady = loadGenres();
+  loadHero(genresReady);
   loadMovies();
 }
 
@@ -61,17 +72,16 @@ function setupSearch() {
     state.page = 1;
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     document.querySelectorAll(".genre-pill").forEach((p) => p.classList.remove("active"));
-    elements.title.textContent = q ? `Resultados para: "${q}"` : CATEGORY_TITLES.popular;
-    if (!q) {
+    elements.hero.classList.toggle("hero-hidden", Boolean(q));
+    if (q) {
+      elements.title.textContent = "Resultados de búsqueda";
+    } else {
       state.category = "popular";
       document.querySelector('[data-category="popular"]').classList.add("active");
+      elements.hero.classList.remove("hero-hidden");
       elements.title.textContent = CATEGORY_TITLES.popular;
     }
     await loadMovies();
-  });
-
-  elements.searchInput.addEventListener("keyup", (e) => {
-    if (e.key === "Enter") elements.searchForm.requestSubmit();
   });
 }
 
@@ -85,6 +95,7 @@ function setupTabs() {
       state.genreId = null;
       state.page = 1;
       elements.searchInput.value = "";
+      elements.hero.classList.remove("hero-hidden");
       document.querySelectorAll(".genre-pill").forEach((p) => p.classList.remove("active"));
       elements.title.textContent = CATEGORY_TITLES[state.category];
       await loadMovies();
@@ -95,6 +106,7 @@ function setupTabs() {
 async function loadGenres() {
   try {
     const data = await request("/genre/movie/list");
+    data.genres.forEach((g) => (state.genreMap[g.id] = g.name));
     elements.genreFilters.innerHTML = data.genres
       .map((g) => `<button class="genre-pill" data-genre-id="${g.id}">${g.name}</button>`)
       .join("");
@@ -105,8 +117,10 @@ async function loadGenres() {
         state.genreId = wasActive ? null : Number(pill.dataset.genreId);
         if (state.genreId) pill.classList.add("active");
         state.page = 1;
+        state.query = "";
+        elements.hero.classList.remove("hero-hidden");
         elements.title.textContent = state.genreId
-          ? `Género: ${pill.textContent}`
+          ? state.genreMap[state.genreId]
           : CATEGORY_TITLES[state.category];
         await loadMovies();
       });
@@ -133,55 +147,75 @@ function buildUrl() {
 }
 
 async function loadMovies() {
-  elements.loading.classList.remove("hidden");
   elements.empty.classList.add("hidden");
-  elements.grid.innerHTML = "";
   elements.pagination.classList.add("hidden");
+  elements.grid.innerHTML = renderSkeletons(12);
 
   try {
     const { endpoint, params } = buildUrl();
     const data = await request(endpoint, params);
     state.totalPages = data.total_pages || 1;
+    const results = data.results || [];
 
-    if (!data.results || data.results.length === 0) {
+    if (results.length === 0) {
+      elements.grid.innerHTML = "";
       elements.empty.classList.remove("hidden");
-      elements.loading.classList.add("hidden");
       return;
     }
 
-    elements.grid.innerHTML = data.results.map(renderCard).join("");
+    elements.grid.innerHTML = results.map(renderCard).join("");
     renderPagination(data.page);
+    observeReveals(elements.grid);
   } catch (err) {
     console.error(err);
     elements.grid.innerHTML = `
-      <div class="empty">
-        No se pudieron cargar las películas.<br />
-        <small>Comprueba que has puesto tu API key de TMDb en <code>config.js</code>.</small>
+      <div class="empty" style="grid-column: 1 / -1;">
+        <span class="empty-icon">✦</span>
+        <p>No se pudieron cargar las películas.</p>
+        <small style="color: var(--text-muted);">Comprueba que el TMDB_API_KEY está definido en Vercel.</small>
       </div>`;
-  } finally {
-    elements.loading.classList.add("hidden");
   }
 }
 
+function renderSkeletons(n) {
+  return Array.from({ length: n }, () => `
+    <div class="skeleton" aria-hidden="true">
+      <div class="skeleton-poster"></div>
+      <div class="skeleton-line"></div>
+      <div class="skeleton-line short"></div>
+    </div>`).join("");
+}
+
 function renderCard(movie) {
-  const poster = movie.poster_path
-    ? `<img src="${IMAGE_BASE}${movie.poster_path}" alt="${movie.title}" loading="lazy" />`
-    : `<div class="poster-fallback">🎬</div>`;
+  const hasPoster = Boolean(movie.poster_path);
+  const genres = (movie.genre_ids || [])
+    .map((id) => state.genreMap[id])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join(" · ");
+  const backdropVar = movie.backdrop_path
+    ? `--backdrop:url("${BACKDROP_BASE}${movie.backdrop_path}")`
+    : "";
+  const year = movie.release_date ? movie.release_date.slice(0, 4) : "Sin fecha";
   return `
-    <div class="movie-card" data-id="${movie.id}">
-      ${poster}
+    <article class="movie-card" data-id="${movie.id}" data-reveal style="${backdropVar}">
+      <div class="card-backdrop"></div>
+      <div class="poster">
+        <div class="poster-fallback"><span>▮</span></div>
+        ${hasPoster ? `<img src="${IMAGE_BASE}${movie.poster_path}" alt="${movie.title}" loading="lazy" onerror="this.remove()" />` : ""}
+      </div>
       <span class="rating">★ ${movie.vote_average.toFixed(1)}</span>
       <div class="movie-info">
         <div class="movie-title">${movie.title}</div>
-        <div class="movie-meta">${movie.release_date ? movie.release_date.slice(0, 4) : "N/A"}</div>
+        <div class="movie-meta">${year}${genres ? ` &middot; ${genres}` : ""}</div>
       </div>
-    </div>`;
+    </article>`;
 }
 
 function renderPagination(page) {
   if (state.totalPages > 1) {
     elements.pagination.classList.remove("hidden");
-    elements.pageInfo.textContent = `Página ${page} de ${state.totalPages}`;
+    elements.pageInfo.textContent = `${page} / ${state.totalPages}`;
     elements.prevPage.disabled = page <= 1;
     elements.nextPage.disabled = page >= state.totalPages;
   }
@@ -210,6 +244,9 @@ function setupModal() {
     if (card) openModal(card.dataset.id);
   });
   elements.modalOverlay.addEventListener("click", closeModal);
+  elements.heroMoreBtn.addEventListener("click", () => {
+    if (state.heroId) openModal(state.heroId);
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeModal();
   });
@@ -218,18 +255,17 @@ function setupModal() {
 async function openModal(movieId) {
   try {
     const movie = await request(`/movie/${movieId}`, { append_to_response: "videos" });
-    const trailer = movie.videos?.results?.find(
-      (v) => v.site === "YouTube" && v.type === "Trailer"
-    ) || movie.videos?.results?.find((v) => v.site === "YouTube");
+    const trailer =
+      movie.videos?.results?.find((v) => v.site === "YouTube" && v.type === "Trailer") ||
+      movie.videos?.results?.find((v) => v.site === "YouTube");
 
     const backdrop = movie.backdrop_path
       ? `url("${BACKDROP_BASE}${movie.backdrop_path}")`
       : "none";
-
     const genres = movie.genres.map((g) => g.name).join(", ");
 
     elements.modalContent.innerHTML = `
-      <button class="close-btn" id="close-modal">✕</button>
+      <button class="close-btn" id="close-modal" aria-label="Cerrar">✕</button>
       <div class="modal-backdrop" style="background-image: ${backdrop};"></div>
       <div class="modal-body">
         <h2 class="modal-title">${movie.title}</h2>
@@ -254,7 +290,7 @@ async function openModal(movieId) {
       playBtn.addEventListener("click", () => {
         document.getElementById("trailer-container").innerHTML = `
           <div class="trailer-embed">
-            <iframe src="https://www.youtube.com/embed/${trailer.key}" allowfullscreen></iframe>
+            <iframe src="https://www.youtube.com/embed/${trailer.key}" allowfullscreen title="Trailer"></iframe>
           </div>`;
         playBtn.remove();
       });
@@ -268,6 +304,61 @@ function closeModal() {
   elements.modal.classList.add("hidden");
   elements.modalContent.innerHTML = "";
   document.body.style.overflow = "";
+}
+
+async function loadHero(genresReady) {
+  try {
+    await genresReady;
+    const data = await request("/movie/popular", { page: 1 });
+    const featured = data.results.find((m) => m.backdrop_path) || data.results[0];
+    if (!featured) return;
+    state.heroId = featured.id;
+    elements.heroBackdrop.style.backgroundImage = `url("${BACKDROP_BASE}${featured.backdrop_path}")`;
+    elements.heroTitle.textContent = featured.title;
+    const genres = (featured.genre_ids || [])
+      .map((id) => state.genreMap[id])
+      .filter(Boolean)
+      .join(" · ");
+    const year = featured.release_date ? featured.release_date.slice(0, 4) : "Sin fecha";
+    elements.heroMeta.textContent = `${year} · ${genres} · ★ ${featured.vote_average.toFixed(1)}`;
+    elements.heroOverview.textContent = featured.overview || "";
+  } catch (err) {
+    console.error("Error cargando héroe:", err);
+  }
+}
+
+function setupEffects() {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("revealed");
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    { threshold: 0.08 }
+  );
+  window._revealObserver = observer;
+
+  document.addEventListener("mousemove", (e) => {
+    elements.cursorGlow.style.transform = `translate3d(${e.clientX - 150}px, ${e.clientY - 150}px, 0)`;
+  });
+
+  window.addEventListener("scroll", () => {
+    elements.backToTop.classList.toggle("hidden", window.scrollY < 600);
+  });
+
+  elements.backToTop.addEventListener("click", () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
+function observeReveals(container) {
+  container.querySelectorAll("[data-reveal]").forEach((el) => {
+    window._revealObserver.unobserve(el);
+    window._revealObserver.observe(el);
+  });
 }
 
 document.addEventListener("DOMContentLoaded", init);
